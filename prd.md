@@ -119,12 +119,13 @@
 ### **11. 技術要求**
 
 *   **後端語言：** Golang
-*   **前端框架：** **React (搭配 TypeScript)** 或 **Vue (搭配 TypeScript)** (請擇一確定)
+*   **前端框架：** **React (搭配 TypeScript)**
 *   **樣式：** Tailwind CSS
 *   **錄音函式庫：** **錄音功能在瀏覽器端透過 `MediaRecorder` Web API 完成。**
 *   **除錯模式：** 可透過設定檔設定是否開啟除錯模式。
 *   **環境變數：** 需包含必要的環境變數設定 (例如資料庫連線字串)。
 
+### 架構圖
 ```mermaid
 graph TD
     subgraph "使用者_Clients"
