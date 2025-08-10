@@ -1,0 +1,691 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "後端基礎設施與資料庫設定",
+        "description": "設定後端 Golang 專案結構，初始化 SQLite 資料庫，並根據 PRD 建立 `users`, `online_users`, `call_history` 資料表。這是所有後端功能的基礎。",
+        "details": "1. 使用 `go mod init` 初始化 Golang 專案。\n2. 引入 `github.com/mattn/go-sqlite3` 套件進行資料庫操作。\n3. 編寫一個 SQL 初始化腳本 (`schema.sql`) 來創建 PRD 中定義的三個資料表，並確保 `call_history` 的 `caller_id` 和 `receiver_id` 欄位已建立索引以優化查詢效能。\n4. 建立一個 `database` 套件，封裝資料庫連線、關閉及初始化邏輯。\n5. 建立主應用程式 `main.go`，設定基本的 HTTP 伺服器結構，準備整合後續的 API 和 WebSocket 處理器。",
+        "testStrategy": "單元測試：驗證資料庫連線是否成功，以及資料表是否能被正確創建。手動驗證：執行程式後，使用 SQLite 工具檢查資料庫檔案是否已生成且結構正確。",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "初始化 Golang 專案並設定目錄結構",
+            "description": "建立專案根目錄，使用 `go mod init` 初始化 Go 模組，並建立一個標準的專案目錄結構，例如 `cmd/server` 用於放置主程式，`internal/database` 用於資料庫邏輯，以及 `scripts` 用於存放 SQL 腳本，為後續的程式碼組織打下基礎。",
+            "dependencies": [],
+            "details": "1. 建立專案資料夾：`mkdir voip-server && cd voip-server`。\n2. 初始化 Go Module：`go mod init <your-module-path>`。\n3. 建立推薦的目錄結構：`mkdir -p cmd/server internal/database scripts`。",
+            "status": "pending",
+            "testStrategy": "手動驗證：檢查 `go.mod` 檔案是否已成功建立，並且 `cmd`, `internal`, `scripts` 等目錄結構是否正確存在於專案根目錄下。"
+          },
+          {
+            "id": 2,
+            "title": "編寫資料庫結構定義檔 (schema.sql)",
+            "description": "在 `scripts` 目錄下建立一個 `schema.sql` 檔案，其中包含創建 `users`, `online_users`, 和 `call_history` 三個資料表的 SQL `CREATE TABLE` 語句。特別需要為 `call_history` 表的 `caller_id` 和 `receiver_id` 欄位建立索引以提升查詢效能。",
+            "dependencies": [],
+            "details": "在 `scripts/schema.sql` 檔案中，編寫 SQL 語句。\n- `users` 表：應根據 PRD 設計，包含 `id`, `name`, `voip_id` 等欄位，以簡化 Demo 的登入邏輯。\n- `online_users` 表：應包含 `user_id` (外鍵), `ip_address`, `login_time`, `last_active_time` 等欄位，與 PRD 一致。\n- `call_history` 表：應包含 `id`, `caller_id`, `receiver_id`, `start_time`, `end_time`, `duration_seconds`, `audio_url`, `status` 等欄位，與 PRD 一致。\n- 索引：`CREATE INDEX idx_caller_id ON call_history (caller_id);` 和 `CREATE INDEX idx_receiver_id ON call_history (receiver_id);`。",
+            "status": "pending",
+            "testStrategy": "程式碼審查：檢查 SQL 語法是否正確，欄位定義是否符合 PRD 要求。可選：使用 SQLite 命令列工具或 GUI 工具手動執行此腳本，驗證是否能成功建立資料表與索引。"
+          },
+          {
+            "id": 3,
+            "title": "建立 `database` 套件並封裝資料庫初始化邏輯",
+            "description": "在 `internal/database` 目錄下建立一個新的 Go 套件。引入 `github.com/mattn/go-sqlite3` 和 `database/sql`。實作一個函式來開啟 SQLite 資料庫連線，並提供一個初始化函式來讀取並執行 `scripts/schema.sql` 檔案，以自動化建立資料表。",
+            "dependencies": [],
+            "details": "1. 在 `internal/database/database.go` 中，建立 `ConnectDB(dataSourceName string) (*sql.DB, error)` 函式。\n2. 建立 `InitializeDatabase(db *sql.DB)` 函式，該函式使用 `os.ReadFile(\"scripts/schema.sql\")` 讀取 SQL 腳本內容，並透過 `db.Exec()` 執行它。\n3. 使用 `go get github.com/mattn/go-sqlite3` 將依賴項加入 `go.mod`。",
+            "status": "pending",
+            "testStrategy": "單元測試：為 `InitializeDatabase` 函式編寫測試，使用一個記憶體中的 SQLite 資料庫 (`:memory:`) 或一個暫存的檔案。在測試中呼叫此函式，然後查詢 `sqlite_master` 表來驗證 `users`, `online_users`, `call_history` 三個資料表是否已成功建立。"
+          },
+          {
+            "id": 4,
+            "title": "建立主應用程式 `main.go` 並整合資料庫",
+            "description": "在 `cmd/server/` 目錄下建立 `main.go`。在此檔案中，呼叫 `database` 套件的連線與初始化函式來準備資料庫。如果初始化成功，則啟動一個基本的 HTTP 伺服器，為後續的 API 端點和 WebSocket 處理器做準備。",
+            "dependencies": [],
+            "details": "1. 在 `main` 函式中，首先呼叫 `database.ConnectDB(\"voip.db\")` 來取得資料庫連線。\n2. 如果連線成功，接著呼叫 `database.InitializeDatabase(db)`。\n3. 處理所有可能的錯誤，若發生錯誤則記錄日誌並終止程式。\n4. 設定一個簡單的 HTTP 伺服器根路由處理器 `http.HandleFunc(\"/\", ...)`，回傳「伺服器運行中」。\n5. 呼叫 `http.ListenAndServe(\":8080\", nil)` 來啟動伺服器。",
+            "status": "pending",
+            "testStrategy": "整合測試：執行 `go run cmd/server/main.go`。程式不應報錯。檢查專案根目錄下是否已生成 `voip.db` 檔案。使用 SQLite 工具打開此檔案，確認三個資料表及其索引都已正確建立。"
+          },
+          {
+            "id": 5,
+            "title": "實作應用程式組態管理",
+            "description": "將硬式編碼的設定（如資料庫檔案路徑和伺服器埠號）重構為可由外部管理的組態。建立一個 `config` 結構，並實作從環境變數載入這些設定的邏輯，以提高應用程式的靈活性與可部署性。",
+            "dependencies": [],
+            "details": "1. 建立一個新的 `internal/config` 套件。\n2. 在套件中定義 `Config` 結構，包含 `DBPath` 和 `ServerPort` 欄位。\n3. 建立 `Load()` 函式，使用 `os.Getenv` 讀取環境變數 (例如 `DB_PATH`, `PORT`)，並提供預設值。\n4. 修改 `cmd/server/main.go`，在程式啟動時呼叫 `config.Load()`，並使用回傳的組態物件來設定資料庫路徑和伺服器監聽的埠號。",
+            "status": "pending",
+            "testStrategy": "手動測試：\n1. 不設定環境變數，執行程式，驗證是否使用預設值（例如 `voip.db` 和 `:8080`）。\n2. 設定環境變數後執行程式（例如 `PORT=9090 DB_PATH=test.db go run cmd/server/main.go`），驗證伺服器是否在 `9090` 埠號啟動，且資料庫檔案是否為 `test.db`。"
+          },
+          {
+            "id": 6,
+            "title": "實作本地開發用 HTTPS/TLS 設定",
+            "description": "為後端伺服器設定 TLS，使其能夠以 HTTPS 模式運行。這是為了滿足瀏覽器安全策略，因為 WebRTC 和 MediaRecorder 等 Web API 需要在安全的上下文 (Secure Context) 中執行。",
+            "dependencies": [
+              4
+            ],
+            "details": "1. 編寫一個腳本 (例如 `scripts/generate-cert.sh`)，使用 OpenSSL 或 `mkcert` 工具來生成自簽署的 TLS 憑證 (`cert.pem`) 和私鑰 (`key.pem`)。\n2. 修改 `cmd/server/main.go`，將 `http.ListenAndServe` 替換為 `http.ListenAndServeTLS`，並傳入憑證和私鑰的檔案路徑。\n3. 將憑證路徑加入應用程式組態管理中。",
+            "status": "pending",
+            "testStrategy": "手動驗證：啟動伺服器後，使用瀏覽器訪問 `https://localhost:8080` (或設定的埠號)。瀏覽器可能會提示憑證不受信任，但應該能夠手動繼續並成功訪問伺服器。檢查開發者工具控制台，確認頁面是在安全的上下文中載入的。"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "WebSocket 伺服器與使用者狀態管理",
+        "description": "實作 Golang WebSocket 伺服器，用於處理使用者連線、管理即時線上狀態，並向所有客戶端廣播最新的線上使用者列表。",
+        "details": "1. 引入 `github.com/gorilla/websocket` 套件。\n2. 建立一個 WebSocket 升級器 (Upgrader) 來處理 HTTP 連線升級請求。\n3. 設計一個 `Client` 結構來代表每個連線的客戶端，包含連線本身、使用者 ID 等資訊。\n4. 實作一個 `Hub` 或 `Manager` 結構，使用 map 在記憶體中管理所有活躍的客戶端 (`map[*Client]bool`)，處理客戶端的註冊、註銷和訊息廣播。\n5. 當新使用者連線時，將其加入 `Hub`，並觸發一次廣播，將當前所有線上使用者的列表推送給所有客戶端。",
+        "testStrategy": "整合測試：啟動兩個或多個 WebSocket 客戶端，驗證客戶端連線後，伺服器是否能正確廣播更新後的使用者列表給所有客戶端。單元測試：測試 `Hub` 的註冊與註銷邏輯。",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "設定 WebSocket 端點與連線升級器",
+            "description": "建立一個 HTTP 伺服器，並設定一個 `/ws` 端點。實作一個 `gorilla/websocket.Upgrader` 來處理將標準 HTTP GET 請求升級為 WebSocket 連線的邏輯。",
+            "dependencies": [],
+            "details": "在 `main.go` 或一個新的 `websocket` 套件中，定義一個 `serveWs` 函式作為 HTTP 處理器。初始化一個 `websocket.Upgrader` 實例，可以設定 `ReadBufferSize`, `WriteBufferSize`，並提供一個 `CheckOrigin` 函式來允許跨來源連線（在開發階段可暫時設定為 `return true`）。此處理器將是所有 WebSocket 連線的入口點。",
+            "status": "pending",
+            "testStrategy": "啟動伺服器，使用 Postman 或 `wscat` 等工具嘗試連線到 `/ws` 端點，驗證連線是否能成功從 HTTP/1.1 升級到 WebSocket 協議。"
+          },
+          {
+            "id": 2,
+            "title": "定義 Client 結構與其讀寫 Goroutines",
+            "description": "建立一個 `Client` 結構來封裝每個 WebSocket 連線。此結構應包含連線本身 (`*websocket.Conn`)、一個用於傳出訊息的緩衝 channel (`chan []byte`)，以及所屬的 `Hub` 的參考。同時為每個 Client 實作讀取和寫入訊息的 goroutine。",
+            "dependencies": [],
+            "details": "定義 `type Client struct { hub *Hub; conn *websocket.Conn; send chan []byte; userId string; }`。實作 `readPump` 方法，在一個無限迴圈中從 WebSocket 連線讀取訊息，並將其轉發到 Hub。實作 `writePump` 方法，在一個無限迴圈中從 `send` channel 讀取訊息，並將其寫入 WebSocket 連線。`readPump` 還需處理連線關閉事件，並通知 Hub 註銷此客戶端。",
+            "status": "pending",
+            "testStrategy": "單元測試可以模擬一個連線，驗證 `readPump` 和 `writePump` 是否能正確地處理訊息傳遞和連線關閉事件。"
+          },
+          {
+            "id": 3,
+            "title": "實作 Hub 結構以管理客戶端",
+            "description": "建立一個中央 `Hub` 結構，用於統一管理所有活躍的 `Client` 實例。`Hub` 將負責處理客戶端的註冊、註銷以及訊息的廣播。",
+            "dependencies": [
+              "2.2"
+            ],
+            "details": "定義 `type Hub struct { clients map[*Client]bool; broadcast chan []byte; register chan *Client; unregister chan *Client; }`。`clients` map 用於儲存所有連線的客戶端。`register` 和 `unregister` channel 用於安全地（避免 race condition）新增和移除客戶端。`broadcast` channel 用於接收需要廣播給所有客戶端的訊息。",
+            "status": "pending",
+            "testStrategy": "單元測試：建立一個 Hub 實例，模擬發送 Client 到 `register` channel，然後檢查 `clients` map 中是否包含該 Client。同樣地，測試 `unregister` 邏輯。"
+          },
+          {
+            "id": 4,
+            "title": "實現 Hub 的主事件循環 (run)",
+            "description": "為 `Hub` 結構實作一個 `run` 方法。此方法應在一個獨立的 goroutine 中運行，監聽並處理來自 `register`、`unregister` 和 `broadcast` channel 的事件。",
+            "dependencies": [
+              "2.3"
+            ],
+            "details": "`run()` 方法的核心是一個 `for` 迴圈搭配 `select` 語句。`case client := <-h.register:` 將客戶端加入 `clients` map。`case client := <-h.unregister:` 檢查客戶端是否存在，如果存在則將其從 map 中移除並關閉其 `send` channel。`case message := <-h.broadcast:` 遍歷 `clients` map，將訊息發送到每個客戶端的 `send` channel。",
+            "status": "pending",
+            "testStrategy": "整合測試：啟動 Hub 的 `run` goroutine，並在主線程中發送註冊、註銷和廣播事件，驗證 Hub 的內部狀態 (`clients` map) 是否如預期般變化。"
+          },
+          {
+            "id": 5,
+            "title": "整合處理器與廣播線上使用者列表",
+            "description": "將 `serveWs` HTTP 處理器與 `Hub` 和 `Client` 整合起來。當新連線建立時，建立一個 `Client` 實例並將其註冊到 `Hub`。修改 `Hub` 的註冊邏輯，使其在每次有新使用者加入或離開時，向所有客戶端廣播最新的線上使用者列表。",
+            "dependencies": [
+              "2.1",
+              "2.4"
+            ],
+            "details": "1. 在 `main` 函式中，建立一個 Hub 實例並以 goroutine 方式運行 `hub.run()`。2. 修改 `serveWs` 處理器，在成功升級連線後，建立 `Client` 實例（可從請求中獲取使用者 ID），並將其發送到 `hub.register` channel。3. 啟動該 client 的 `readPump` 和 `writePump` goroutines。4. 擴充 `Hub` 的 `run` 方法，在處理 `register` 和 `unregister` 事件後，收集所有 `clients` 的 `userId`，將其序列化為 JSON 格式（例如 `{\"type\": \"user_list\", \"users\": [\"user1\", \"user2\"]}`），然後將此 JSON 訊息放入 `broadcast` channel。",
+            "status": "pending",
+            "testStrategy": "完整整合測試：啟動伺服器。使用兩個或多個 WebSocket 客戶端連線。驗證當第二個客戶端連線後，兩個客戶端都收到了包含兩個使用者 ID 的列表。當其中一個客戶端斷線後，驗證剩餘的客戶端收到了更新後只包含一個使用者的列表。"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "WebRTC 信令邏輯實作",
+        "description": "擴充 WebSocket 伺服器功能，使其能夠中繼 WebRTC 信令訊息，包括 SDP (Session Description Protocol) 的 offer/answer 和 ICE (Interactive Connectivity Establishment) 候選地址。",
+        "details": "1. 在 WebSocket 訊息協議中定義信令類型，例如 `offer`, `answer`, `candidate`, `call`, `hangup`。\n2. 伺服器接收到信令訊息後，解析其內容（包含目標使用者 ID）。\n3. 根據目標使用者 ID，從 `Hub` 中查找對應的客戶端連線。\n4. 將原始信令訊息轉發給目標客戶端。伺服器在此過程中不需理解或修改信令內容，僅作為一個透明的傳輸通道。",
+        "testStrategy": "整合測試：使用兩個客戶端，手動或透過腳本模擬發送 `offer` 訊息，驗證伺服器是否能正確地將其轉發給指定的另一個客戶端。同樣地，測試 `answer` 和 `candidate` 的轉發。",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "在伺服器端定義通用的 WebSocket 訊息結構",
+            "description": "建立一個 Golang 結構體來標準化客戶端與伺服器之間的通訊協議，使其能承載不同類型的 WebRTC 信令以及目標使用者資訊。",
+            "dependencies": [],
+            "details": "在 Golang 專案中定義一個 `Message` 結構體。此結構應至少包含三個欄位：`Type` (string，例如 \"offer\", \"answer\", \"candidate\", \"call\")，`TargetUserID` (string，用於指定訊息的接收者)，以及 `Payload` (interface{} 或 json.RawMessage，用於存放如 SDP 或 ICE Candidate 等任意結構的資料)。此結構將用於解碼收到的訊息及編碼要發送的訊息。",
+            "status": "pending",
+            "testStrategy": "單元測試：驗證一個包含範例資料的 JSON 字串可以被正確地解碼 (unmarshal) 到 `Message` 結構中，且其各欄位值皆符合預期。"
+          },
+          {
+            "id": 2,
+            "title": "更新 `Client.readPump` 以解析新的信令訊息格式",
+            "description": "修改現有的 WebSocket 客戶端訊息讀取循環 (`readPump`)，使其能夠將收到的 JSON 訊息解碼到 `Message` 結構中，並將其傳遞給 `Hub` 進行後續處理。",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "在 `Client` 結構的 `readPump` 方法中，取代原有的訊息處理邏輯。使用 `json.Unmarshal` 將從 WebSocket 連線讀取的 `[]byte` 訊息解析為 `Message` 實例。解析成功後，將此結構化的 `Message` 物件連同來源 `Client` 的參照一起發送到 `Hub` 的一個新 channel（例如 `Hub.route`）中，以進行集中路由處理。",
+            "status": "pending",
+            "testStrategy": "整合測試：啟動伺服器，使用 WebSocket 客戶端工具發送一個符合 `Message` 結構的 JSON 訊息。在 `readPump` 中加入日誌記錄，驗證訊息是否被成功解析，且 `Type` 和 `TargetUserID` 等欄位值正確。"
+          },
+          {
+            "id": 3,
+            "title": "在 `Hub` 中實作信令路由核心邏輯",
+            "description": "在 `Hub` 中新增核心處理邏輯，負責接收從 `Client` 傳來的 `Message`，並根據其 `TargetUserID` 查找對應的目標客戶端連線。",
+            "dependencies": [
+              "3.2"
+            ],
+            "details": "修改 `Hub` 的主運行循環 (`run` 方法)。監聽從 `Client.readPump` 傳來的 `Message`。收到訊息後，從 `Hub` 管理的客戶端 map (`map[string]*Client`，其中 key 為 UserID) 中，使用 `message.TargetUserID` 作為 key 來查找目標 `Client` 的指標。此步驟僅負責查找，不包含發送。",
+            "status": "pending",
+            "testStrategy": "單元測試：手動在 `Hub` 中註冊幾個模擬的 `Client`。然後傳入一個 `Message`，驗證 `Hub` 是否能根據 `TargetUserID` 正確地返回對應的 `Client` 指標，並在找不到時能正確處理（例如返回 nil）。"
+          },
+          {
+            "id": 4,
+            "title": "實作訊息的實際轉發機制",
+            "description": "當 `Hub` 成功找到目標客戶端後，將原始訊息（重新編碼為 JSON）發送至該客戶端的傳送通道，由其 `writePump` 負責寫入 WebSocket 連線。",
+            "dependencies": [
+              "3.3"
+            ],
+            "details": "在 `Hub` 的路由邏輯中，當找到目標 `Client` 後，將原始的 `Message` 物件（為了保持訊息的完整性，特別是 `Payload`）重新使用 `json.Marshal` 編碼回 `[]byte`。然後，將此 `[]byte` 數據寫入目標 `Client` 的 `send` channel 中。同時，需要處理目標客戶端不存在或其 `send` channel 阻塞的情況，以避免伺服器崩潰。",
+            "status": "pending",
+            "testStrategy": "整合測試：基於上一步，當 `Hub` 找到目標客戶端後，驗證訊息是否被成功寫入目標客戶端的 `send` channel。可以透過監控 channel 狀態或在 `writePump` 中加入日誌來確認。"
+          },
+          {
+            "id": 5,
+            "title": "整合與測試 `offer`/`answer`/`candidate` 信令流程",
+            "description": "整合所有新實作的組件，進行端對端的信令轉發測試，確保一個客戶端發送的 WebRTC 信令能夠被伺服器正確地中繼到另一個指定的客戶端。",
+            "dependencies": [
+              "3.4"
+            ],
+            "details": "啟動完整的 WebSocket 伺服器。使用兩個 WebSocket 客戶端工具（例如 Postman 或 `wscat`）模擬兩個使用者（userA, userB）連線。由 userA 發送一個 JSON 訊息，格式如：`{\"type\": \"offer\", \"targetUserId\": \"userB\", \"payload\": {\"sdp\": \"...\"}}`。驗證 userB 的客戶端是否能收到完全相同的 JSON 訊息。重複此過程，測試 `answer` 和 `candidate` 類型的訊息轉發是否也正常工作。",
+            "status": "pending",
+            "testStrategy": "端對端測試：使用兩個 WebSocket 客戶端，手動或透過腳本模擬完整的 `offer` -> `answer` -> `candidate` 交換流程，驗證伺服器是否能作為一個透明的中繼，正確且依序地轉發所有信令訊息。"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "後端 RESTful API - 錄音檔案處理",
+        "description": "建立後端 RESTful API 端點，用於處理錄音檔案的上傳、儲存、查詢通話紀錄及下載。伺服器需處理並發上傳，並確保每次通話只儲存一份錄音。",
+        "details": "1. 實作 `POST /api/upload` 端點：使用 `http.Request` 的 `ParseMultipartForm` 處理檔案上傳。接收檔案及通話唯一識別碼。\n2. 實作「先到先得」邏輯：在儲存檔案前，先查詢資料庫 `call_history` 中該通話的 `audio_url` 是否已存在。若已存在，則忽略此次上傳；若不存在，則儲存檔案至伺服器指定目錄，並將檔案路徑更新至資料庫。\n3. 實作 `GET /api/history` 端點：查詢 `call_history` 資料表，返回通話紀錄列表 (JSON 格式)。\n4. 實作 `GET /api/downloads/:filename` 端點：使用 `http.ServeFile` 提供靜態檔案下載功能。",
+        "testStrategy": "單元測試：測試檔案儲存與資料庫更新邏輯。整合測試：使用 Postman 或 curl 工具，模擬上傳檔案至 `/api/upload`，然後呼叫 `/api/history` 驗證紀錄是否更新，最後透過 `/api/downloads` 驗證檔案是否能成功下載。",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "建立 API 路由與處理器結構",
+            "description": "初始化後端 API 的路由設定，為錄音檔案處理功能建立必要的端點 (`/api/upload`, `/api/history`, `/api/downloads/:filename`)。此步驟將建立處理器函式的基本框架，為後續的具體邏輯實作打下基礎。",
+            "dependencies": [],
+            "details": "在 `main.go` 或一個新的 `api` 套件中，使用 `http.ServeMux` 或 `gorilla/mux` 等路由套件。註冊三個路由規則：`POST /api/upload`、`GET /api/history`、`GET /api/downloads/:filename`。為每個路由綁定一個空的或回傳「尚未實作」的處理器函式 (handler function)，例如 `uploadHandler`, `historyHandler`, `downloadHandler`。",
+            "status": "pending",
+            "testStrategy": "啟動伺服器後，使用 `curl` 或 Postman 等工具向這三個端點發送請求，確認伺服器能回傳預期的佔位回應（例如 501 Not Implemented 或自訂訊息），且路由能被正確匹配。"
+          },
+          {
+            "id": 2,
+            "title": "實作檔案上傳端點 (`POST /api/upload`) 的檔案接收與儲存邏輯",
+            "description": "完整實作 `/api/upload` 端點中處理 multipart/form-data 的部分。此任務專注於從請求中解析出音訊檔案和通話識別碼（call_id），並將檔案儲存到伺服器的指定目錄中。",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "在 `uploadHandler` 函式中，首先呼叫 `r.ParseMultipartForm()` 來解析表單資料。從 `r.MultipartForm` 中獲取檔案（例如，欄位名為 \"audio\"）和 `call_id`（欄位名為 \"callId\"）。產生一個唯一的檔案名稱（建議使用 `call_id` 加上副檔名 `.wav` 以確保唯一性）。將接收到的檔案內容寫入到伺服器上的一個預先建立好的目錄（例如 `./uploads/`）。",
+            "status": "pending",
+            "testStrategy": "單元測試：建立一個模擬的 `http.Request`，其中包含 multipart form data，驗證處理器是否能成功解析並在指定目錄下建立檔案。整合測試：使用 Postman 發送一個包含 WAV 檔案和 `call_id` 的 POST 請求到 `/api/upload`，然後手動檢查伺服器的 `./uploads/` 目錄，確認檔案已成功儲存。"
+          },
+          {
+            "id": 3,
+            "title": "整合資料庫更新與並發控制邏輯至上傳端點",
+            "description": "在檔案成功儲存後，為 `/api/upload` 端點加入「先到先得」的資料庫更新邏輯。此邏輯將確保同一通話（以 `call_id` 識別）只會有一份錄音紀錄被儲存至資料庫，以處理並發上傳的情境。",
+            "dependencies": [
+              "4.2"
+            ],
+            "details": "修改 `uploadHandler`。在檔案儲存到磁碟後，使用資料庫連線（來自任務 1）。啟動一個資料庫交易 (Transaction)。在交易中，首先查詢 `call_history` 表，檢查 `call_id` 對應的紀錄其 `audio_url` 欄位是否為空。如果為空，則執行 `UPDATE` 命令，將檔案路徑（例如 `/api/downloads/your-call-id.wav`）寫入 `audio_url` 欄位，然後提交交易。如果 `audio_url` 已有值，則放棄此次更新（直接提交或回滾交易），並刪除剛才儲存的檔案以避免產生孤兒檔案。",
+            "status": "pending",
+            "testStrategy": "整合測試：連續快速地對同一個 `call_id` 發送兩次上傳請求。檢查資料庫，確認 `call_history` 表中該 `call_id` 的 `audio_url` 只有一筆紀錄。檢查伺服器檔案系統，確認只留下一個對應的錄音檔。"
+          },
+          {
+            "id": 4,
+            "title": "實作通話紀錄查詢端點 (`GET /api/history`)",
+            "description": "建立 `/api/history` 端點的功能，使其能夠從 `call_history` 資料庫資料表中查詢所有通話紀錄，並以 JSON 格式回傳給客戶端。",
+            "dependencies": [
+              "4.3"
+            ],
+            "details": "在 `historyHandler` 函式中，使用資料庫連線執行 `SELECT * FROM call_history ORDER BY start_time DESC` 查詢。將查詢結果掃描到一個 `CallHistory` 結構的切片 (slice) 中。使用 `encoding/json` 套件將該切片序列化為 JSON 字串。設定回應的 `Content-Type` 為 `application/json`，並將 JSON 字串寫入 `http.ResponseWriter`。",
+            "status": "pending",
+            "testStrategy": "整合測試：先透過 `/api/upload` 上傳幾筆不同的通話錄音。然後使用瀏覽器或 Postman 訪問 `/api/history`，驗證回傳的 JSON 資料是否包含所有已上傳的通話紀錄，且格式正確。"
+          },
+          {
+            "id": 5,
+            "title": "實作錄音檔案下載端點 (`GET /api/downloads/:filename`)",
+            "description": "建立 `/api/downloads/:filename` 端點，讓使用者可以根據檔案名稱下載先前上傳的錄音檔案。",
+            "dependencies": [
+              "4.1",
+              "4.3"
+            ],
+            "details": "在 `downloadHandler` 函式中，從 URL 路徑中解析出 `:filename` 參數。為防止路徑遍歷攻擊 (path traversal)，需對 `filename` 進行清理，確保它不包含 `..` 或 `/` 等字元。使用 `path.Join` 將上傳目錄（例如 `./uploads`）和清理後的 `filename` 組合成完整的檔案路徑。最後，使用 `http.ServeFile` 函式將該檔案作為回應發送給客戶端。",
+            "status": "pending",
+            "testStrategy": "整合測試：先上傳一個檔案（例如 `call123.wav`）。然後，透過 `/api/history` 取得其檔案名稱。最後，在瀏覽器中訪問 `http://localhost:8080/api/downloads/call123.wav`，驗證瀏覽器是否能觸發下載，且下載的檔案內容正確無誤。"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "前端專案設定與 UI 基礎框架",
+        "description": "使用 Create React App 建立一個新的 React 專案，整合 TypeScript 和 Tailwind CSS。根據 `mobile-ui.png` 樣式稿，建構應用的主要 UI 介面框架。",
+        "details": "1. 執行 `npx create-react-app voip-demo --template typescript`。\n2. 遵循 Tailwind CSS 官方文件，將其整合至 React 專案中。\n3. 建立元件資料夾 (`src/components`)。\n4. 建立主要應用程式元件 (`App.tsx`)，並在其中佈局主要區塊：使用者名稱輸入框、連線按鈕、狀態顯示區、聯絡人下拉選單、通話控制按鈕（通話、掛斷）及下載按鈕。\n5. 使用 `useState` 來管理表單輸入和 UI 狀態的初始值。",
+        "testStrategy": "手動驗證：在瀏覽器中運行開發伺服器 (`npm start`)，檢查 UI 佈局是否與 `mobile-ui.png` 的設計一致，並確認元件在不同螢幕尺寸下的基本響應式表現。",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "專案初始化與 TypeScript 設定",
+            "description": "使用 Create React App (CRA) 建立一個新的 React 專案，並使用 TypeScript 範本。此步驟將為整個前端應用程式奠定基礎。",
+            "dependencies": [],
+            "details": "執行指令 `npx create-react-app voip-demo --template typescript`。成功後，移除 CRA 預設的範例程式碼（如 `App.css`, `logo.svg` 等），並清理 `App.tsx` 檔案，只留下一個基本的元件結構，準備後續開發。",
+            "status": "pending",
+            "testStrategy": "執行 `npm start`，確認開發伺服器能成功啟動，並在瀏覽器中顯示一個空白或基本的頁面，無任何 CRA 預設樣式。"
+          },
+          {
+            "id": 2,
+            "title": "整合 Tailwind CSS 樣式框架",
+            "description": "將 Tailwind CSS 整合到已建立的 React 專案中，以便後續的 UI 開發可以使用其 utility-first 的樣式類別。",
+            "dependencies": [
+              "5.1"
+            ],
+            "details": "遵循 Tailwind CSS 官方文件中的「Install Tailwind CSS with Create React App」指南。主要步驟包括：安裝 `tailwindcss`, `postcss`, `autoprefixer` 套件；執行 `npx tailwindcss init -p` 產生設定檔；設定 `tailwind.config.js` 中的 `content` 路徑，確保其包含所有 `ts` 和 `tsx` 檔案；在 `index.css` 中引入 Tailwind 的基礎樣式。",
+            "status": "pending",
+            "testStrategy": "在 `App.tsx` 中加入一個帶有 Tailwind CSS 類別的元素，例如 `<h1 className=\"text-3xl font-bold text-blue-500\">測試 Tailwind</h1>`。執行 `npm start`，驗證文字是否正確顯示了指定的樣式（大字體、粗體、藍色）。"
+          },
+          {
+            "id": 3,
+            "title": "建立主要應用佈局與元件結構",
+            "description": "建立應用程式的基礎資料夾結構，並在 `App.tsx` 中使用 Tailwind CSS 建立符合 `mobile-ui.png` 設計稿的整體佈局容器。",
+            "dependencies": [
+              "5.2"
+            ],
+            "details": "在 `src` 資料夾下建立 `components` 子資料夾。在 `App.tsx` 中，使用 Flexbox 或 Grid 佈局，建立一個垂直排列的主容器 (`<main>`)，並使其在行動裝置視圖下居中且有適當的內外邊距。根據 `mobile-ui.png`，將介面劃分為數個邏輯區塊的 `<div>`，例如使用者資訊區、通話控制區等。",
+            "status": "pending",
+            "testStrategy": "在瀏覽器開發者工具中切換到行動裝置視圖，檢查 `App.tsx` 的根元素是否能正確地將內容垂直居中，並且佈局結構與 `mobile-ui.png` 的高階規劃一致。各區塊應有清晰的邊界（可暫時使用背景色區分）。"
+          },
+          {
+            "id": 4,
+            "title": "實作使用者輸入與通話控制元件",
+            "description": "根據 `mobile-ui.png`，建立並設計使用者名稱輸入框、連線按鈕、聯絡人下拉選單以及通話/掛斷按鈕，並設定相關的初始狀態。",
+            "dependencies": [
+              "5.3"
+            ],
+            "details": "在 `App.tsx` 中對應的區塊內，實作以下元件：1. 使用 `<input type=\"text\">` 實現使用者名稱輸入框。2. 使用 `<button>` 實現「連線」按鈕。3. 使用 `<select>` 實現聯絡人下拉選單，並填入一些假資料。4. 使用 `<button>` 實現「通話」和「掛斷」按鈕。使用 Tailwind CSS 類別為這些元件套用樣式。在 `App.tsx` 中使用 `useState` Hook 來管理使用者名稱輸入值 (`username`) 和連線狀態 (`isConnected`) 的初始值。",
+            "status": "pending",
+            "testStrategy": "手動測試：在瀏覽器中驗證輸入框可以輸入文字，按鈕可以點擊，下拉選單可以展開。檢查所有元件的樣式、間距和排列是否符合 `mobile-ui.png` 的設計。"
+          },
+          {
+            "id": 5,
+            "title": "實作狀態顯示與下載按鈕元件",
+            "description": "建立用於顯示目前連線/通話狀態的文字區域，以及一個用於觸發下載功能的按鈕，完成 UI 基礎框架的最後部分。",
+            "dependencies": [
+              "5.3"
+            ],
+            "details": "在 `App.tsx` 中，新增一個 `<p>` 或 `<div>` 元素來顯示狀態資訊。此狀態文字應由一個 `useState` 變數（例如 `statusMessage`）控制，初始值可設為「未連線」。新增一個「下載錄音」按鈕，並使用 Tailwind CSS 設定其樣式，使其在視覺上與其他控制按鈕有所區別或處於適當位置，如 `mobile-ui.png` 所示。",
+            "status": "pending",
+            "testStrategy": "手動驗證：檢查狀態顯示區域的預設文字是否正確顯示。確認下載按鈕的樣式和位置是否符合 `mobile-ui.png` 的設計。確認所有 UI 元件都已存在且佈局完整。"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "前端 WebSocket 連線與狀態同步",
+        "description": "在 React 應用中實作 WebSocket 客戶端邏輯，使其能夠連線至後端伺服器，在連線成功後發送使用者名稱，並接收伺服器推送的線上使用者列表以動態更新 UI。",
+        "details": "1. 在主元件中使用 `useEffect` Hook 來建立和管理 WebSocket 連線的生命週期。\n2. 使用 `useState` 來儲存 WebSocket 連線實例及連線狀態（例如 '未連線', '連線中', '連線成功'）。\n3. 實作 `onopen`, `onmessage`, `onclose`, `onerror` 事件處理器。\n4. 在 `onopen` 時，發送包含使用者名稱的登入訊息。\n5. 在 `onmessage` 中，解析來自伺服器的訊息。如果是使用者列表更新，則使用 `useState` 更新儲存聯絡人列表的狀態變數，觸發 UI 重新渲染下拉選單。\n6. 增加 UI 狀態處理，例如顯示「連線中...」、「連線失敗」或「與伺服器斷線」等提示，以提升使用者體驗。",
+        "testStrategy": "整合測試：同時運行後端伺服器和前端應用。在兩個不同的瀏覽器分頁中輸入不同名稱並連線，驗證每個分頁的聯絡人下拉選單是否都能正確顯示對方。",
+        "priority": "high",
+        "dependencies": [
+          2,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "建立 WebSocket 管理狀態與自訂掛鉤 (Custom Hook)",
+            "description": "建立一個自訂 React Hook (例如 `useWebSocket`) 來封裝 WebSocket 的連線邏輯與狀態管理。在此 Hook 中，使用 `useState` 初始化 WebSocket 連線實例、連線狀態（例如 'disconnected', 'connecting', 'connected'）以及線上使用者列表的狀態。",
+            "dependencies": [],
+            "details": "1. 在 `src/hooks` 目錄下建立 `useWebSocket.ts` 檔案。\n2. 定義一個名為 `useWebSocket` 的函式。\n3. 在函式內部，使用 `useState<WebSocket | null>(null)` 來儲存 WebSocket 實例。\n4. 使用 `useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')` 來管理連線狀態。\n5. 使用 `useState<string[]>([])` 來儲存從伺服器接收到的線上使用者列表。\n6. 此 Hook 應返回這些狀態變數以及一個用於啟動連線的函式。",
+            "status": "pending",
+            "testStrategy": "單元測試：驗證 `useWebSocket` Hook 在未連線時回傳的初始狀態值是否皆為預期（例如連線實例為 null，狀態為 'disconnected'，使用者列表為空陣列）。"
+          },
+          {
+            "id": 2,
+            "title": "實作 WebSocket 連線建立與生命週期管理",
+            "description": "在 `useWebSocket` Hook 中，實作一個啟動連線的函式，並使用 `useEffect` 來管理 WebSocket 的建立與銷毀。確保在元件卸載時能自動關閉連線，以防止記憶體洩漏。",
+            "dependencies": [
+              "6.1"
+            ],
+            "details": "1. 在 `useWebSocket` Hook 中新增一個 `connect(username: string)` 函式。\n2. 當 `connect` 被呼叫時，首先將連線狀態設定為 'connecting'。\n3. 使用 `useEffect` 來處理連線副作用。當需要建立連線時，執行 `const ws = new WebSocket('ws://<your-backend-address>/ws');` 並將實例存入 state。\n4. `useEffect` 的清理函式 (cleanup function) 必須包含 `ws.close()` 邏輯，確保在元件卸載或重新連線時，舊的連線會被妥善關閉。",
+            "status": "pending",
+            "testStrategy": "手動測試：在主元件中呼叫 `connect` 函式，並在瀏覽器的開發者工具「網路(Network)」分頁中，確認 WebSocket 連線請求是否已成功發起並建立。"
+          },
+          {
+            "id": 3,
+            "title": "綁定核心事件處理器 (onopen, onclose, onerror)",
+            "description": "為 WebSocket 實例綁定 `onopen`, `onclose`, 和 `onerror` 事件處理器。在 `onopen` 時發送使用者登入訊息，並在各事件中更新連線狀態以反映當前的連線情況。",
+            "dependencies": [
+              "6.2"
+            ],
+            "details": "1. 在 `useEffect` 中建立 `ws` 實例後，為其指派事件處理器。\n2. `ws.onopen = () => { ... }`：將連線狀態更新為 'connected'，並立即發送登入訊息，格式為 `ws.send(JSON.stringify({ type: 'login', payload: { username } }))`。\n3. `ws.onclose = () => { ... }`：將連線狀態更新為 'disconnected'。\n4. `ws.onerror = (event) => { ... }`：將連線狀態更新為 'error'，並可選擇性地將錯誤資訊記錄到控制台。",
+            "status": "pending",
+            "testStrategy": "整合測試：啟動後端 WebSocket 伺服器。前端連線成功後，檢查後端日誌是否收到包含正確使用者名稱的登入訊息。接著，手動關閉後端伺服器，驗證前端的連線狀態是否正確更新為 'disconnected'。"
+          },
+          {
+            "id": 4,
+            "title": "實作訊息接收與使用者列表更新邏輯",
+            "description": "實作 `onmessage` 事件處理器來接收伺服器推送的訊息。解析收到的 JSON 訊息，並根據訊息類型（例如 `user_list_update`）來更新儲存線上使用者列表的 React 狀態。",
+            "dependencies": [
+              "6.3"
+            ],
+            "details": "1. 設定 `ws.onmessage = (event) => { ... }`。\n2. 在處理器內部，使用 `JSON.parse(event.data)` 解析來自伺服器的訊息字串。\n3. 根據約定的訊息協議，檢查訊息的 `type` 欄位。\n4. 若 `type` 為 `user_list_update`，則取出 `payload.users` 陣列。\n5. 呼叫 `setOnlineUsers` 狀態更新函式，將新的使用者列表存入 state，這將觸發相關 UI 的重新渲染。應過濾掉列表中的目前使用者本人。",
+            "status": "pending",
+            "testStrategy": "整合測試：開啟兩個不同的瀏覽器分頁並使用不同名稱連線。驗證當第二個使用者連線後，第一個使用者的 `onmessage` 事件被觸發，且其使用者列表狀態被正確更新以包含第二個使用者。"
+          },
+          {
+            "id": 5,
+            "title": "整合 WebSocket 狀態至前端 UI 元件",
+            "description": "在主應用程式元件 (`App.tsx`) 中使用 `useWebSocket` Hook，並將其回傳的狀態與 UI 元件進行綁定。這包括顯示連線狀態提示，以及動態渲染聯絡人下拉選單。",
+            "dependencies": [
+              "6.1",
+              "6.4"
+            ],
+            "details": "1. 在 `App.tsx` 中，透過 `const { connectionStatus, onlineUsers, connect } = useWebSocket();` 取得狀態與方法。\n2. 根據 `connectionStatus` 的值（'connecting', 'connected', 'disconnected', 'error'），在 UI 中條件性地渲染對應的文字提示或狀態指示器。\n3. 將 `onlineUsers` 陣列作為 props 傳遞給聯絡人下拉選單元件。\n4. 在下拉選單元件中，使用 `onlineUsers.map()` 方法來動態生成 `<option>` 元素列表。\n5. 將「連線」按鈕的 `onClick` 事件處理器綁定到 `connect` 函式，並傳入從輸入框獲取的使用者名稱。",
+            "status": "pending",
+            "testStrategy": "端對端測試：完整地執行一次使用者流程。輸入名稱，點擊連線，觀察狀態提示是否從「連線中...」變為「連線成功」。開啟第二個瀏覽器分頁並用另一名稱連線，然後回到第一個分頁，驗證下拉選單中是否已出現第二個使用者的名稱。"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "前端 WebRTC 點對點通話功能",
+        "description": "整合瀏覽器原生的 WebRTC API (`RTCPeerConnection`)，處理點對點通話的建立、接收和結束流程。透過已建立的 WebSocket 通道交換信令。",
+        "details": "1. 建立一個 WebRTC 管理服務或 Hook (`useWebRTC`)。\n2. 實作 `createPeerConnection` 函數，初始化 `RTCPeerConnection` 並配置 STUN 伺服器。\n3. 實作 `ontrack` 事件處理器，當接收到遠端音訊軌道時，將其附加到 HTML `<audio>` 元素上播放。\n4. 實作 `onicecandidate` 事件處理器，將產生的 ICE 候選地址透過 WebSocket 發送給對方。\n5. 呼叫方：點擊「通話」按鈕後，建立 `offer`，設定本地描述 (`setLocalDescription`)，並透過 WebSocket 發送 `offer`。\n6. 接收方：收到 `offer` 後，設定遠端描述 (`setRemoteDescription`)，建立 `answer`，設定本地描述，並透過 WebSocket 發送 `answer`。\n7. 增加通話過程中的邊界狀態處理，例如 UI 應能顯示「對方忙線中」、「對方無回應」或「通話已中斷」等狀態。",
+        "testStrategy": "端對端測試：在兩個瀏覽器分頁中完成連線。由 A 向 B 發起通話，B 接聽。驗證雙方是否能聽到對方的聲音。測試掛斷功能是否能正常終止連線。",
+        "priority": "high",
+        "dependencies": [
+          3,
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "建立 `useWebRTC` Hook 與初始化 `RTCPeerConnection`",
+            "description": "建立一個自定義 React Hook `useWebRTC` 來封裝所有 WebRTC 相關的邏輯，包括狀態管理、`RTCPeerConnection` 實例的建立與配置。這是實現通話功能的基礎。",
+            "dependencies": [],
+            "details": "1. 建立 `hooks/useWebRTC.js` 檔案。\n2. 在 Hook 中，使用 `useState` 和 `useRef` 來管理狀態，例如 `peerConnection` 實例、本地與遠端媒體流 (`localStream`, `remoteStream`)，以及通話狀態 (`callState`: 'idle', 'calling', 'in-call', 'ended')。\n3. 實作一個 `initializePeerConnection` 函數，該函數會建立一個新的 `RTCPeerConnection` 物件，並傳入 STUN 伺服器設定 (例如 `{'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}]}`) 。\n4. 將 `RTCPeerConnection` 實例儲存在 `useRef` 中，以確保在重新渲染之間保持同一個實例。",
+            "status": "pending",
+            "testStrategy": "單元測試：驗證 `useWebRTC` Hook 被呼叫後，`initializePeerConnection` 函數能成功建立一個 `RTCPeerConnection` 實例，且其配置包含正確的 STUN 伺服器地址。"
+          },
+          {
+            "id": 2,
+            "title": "實作本地與遠端媒體流處理",
+            "description": "實現獲取使用者本地麥克風音訊流的邏輯，並將其加入到點對點連線中。同時，設定事件處理器以接收遠端媒體流，並將其附加到 HTML `<audio>` 元素上播放。",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "1. 在 `useWebRTC` Hook 中，建立一個非同步函數 `openUserMedia`。\n2. 使用 `navigator.mediaDevices.getUserMedia({ audio: true, video: false })` 來請求麥克風權限並獲取 `MediaStream`。\n3. 將獲取到的本地音訊流儲存到 `localStream` 狀態中。\n4. 遍歷本地音訊流的軌道 (`localStream.getTracks()`)，並使用 `peerConnection.addTrack(track, localStream)` 將其添加到 `RTCPeerConnection` 中。\n5. 在 `initializePeerConnection` 函數中，為 `peerConnection` 實例指派 `ontrack` 事件處理器。當此事件觸發時，將事件中的遠端媒體流 (`event.streams[0]`) 存入 `remoteStream` 狀態，以便 UI 元件可以將其連結到 `<audio>` 元素的 `srcObject` 屬性。",
+            "status": "pending",
+            "testStrategy": "在 UI 元件中呼叫 `openUserMedia`，驗證瀏覽器是否彈出麥克風授權請求。授權後，檢查 `localStream` 狀態是否被設定。手動模擬 `ontrack` 事件，驗證 `remoteStream` 狀態是否更新。"
+          },
+          {
+            "id": 3,
+            "title": "實作呼叫方 (Caller) 的通話發起邏輯",
+            "description": "為呼叫方實作發起通話的完整流程。這包括建立一個 SDP (Session Description Protocol) offer，將其設定為本地描述，並透過 WebSocket 將此 offer 發送給目標使用者。",
+            "dependencies": [
+              "7.1",
+              "7.2"
+            ],
+            "details": "1. 在 `useWebRTC` Hook 中，建立一個 `startCall(targetUserId)` 函數。\n2. 在此函數中，首先呼叫 `initializePeerConnection()` (from 7.1) 和 `openUserMedia()` (from 7.2)。\n3. 媒體流準備好後，呼叫 `peerConnection.createOffer()` 來建立 SDP offer。\n4. 成功建立 offer 後，使用 `peerConnection.setLocalDescription(offer)` 將其設定為本地描述。\n5. 透過已建立的 WebSocket 連線 (來自 Task 6)，發送一個包含 `type: 'offer'`, `target: targetUserId`, `payload: offer` 的訊息給信令伺服器。\n6. 將 `callState` 更新為 'calling'，以觸發 UI 顯示「撥號中...」的狀態。",
+            "status": "pending",
+            "testStrategy": "在 UI 中點擊「通話」按鈕觸發 `startCall`。使用瀏覽器開發者工具的網路分頁，檢查 WebSocket 是否發送了一個包含 SDP offer 的訊息。同時，驗證 `RTCPeerConnection` 的 `localDescription` 是否已設定。"
+          },
+          {
+            "id": 4,
+            "title": "實作接收方 (Callee) 的通話應答邏輯",
+            "description": "為接收方實作處理來電的完整流程。當透過 WebSocket 收到 offer 時，設定遠端描述，建立一個 answer，設定為本地描述，並將 answer 回傳給呼叫方。",
+            "dependencies": [
+              "7.1",
+              "7.2"
+            ],
+            "details": "1. 在處理 WebSocket 訊息的邏輯中 (來自 Task 6)，當收到 `type: 'offer'` 的訊息時，呼叫 `useWebRTC` Hook 中的 `handleOffer(offer, callerId)` 函數。\n2. 在 `handleOffer` 函數中，先呼叫 `initializePeerConnection()` 和 `openUserMedia()`。\n3. 使用 `peerConnection.setRemoteDescription(new RTCSessionDescription(offer))` 來設定收到的 offer 為遠端描述。\n4. 呼叫 `peerConnection.createAnswer()` 來建立 SDP answer。\n5. 成功建立 answer 後，使用 `peerConnection.setLocalDescription(answer)` 將其設定為本地描述。\n6. 透過 WebSocket 將 `type: 'answer'`, `target: callerId`, `payload: answer` 的訊息回傳。\n7. 將 `callState` 更新為 'in-call'。",
+            "status": "pending",
+            "testStrategy": "模擬從 WebSocket 收到一個 `offer` 訊息。驗證 `handleOffer` 函數是否被觸發，`RTCPeerConnection` 的 `remoteDescription` 是否被設定，以及是否透過 WebSocket 發送了一個 `answer` 訊息。"
+          },
+          {
+            "id": 5,
+            "title": "實作 ICE 候選交換與通話結束邏輯",
+            "description": "完成 WebRTC 連線的最後步驟：交換 ICE 候選地址。同時，實作掛斷通話的功能，確保連線能夠被正常關閉，並釋放相關資源。",
+            "dependencies": [
+              "7.3",
+              "7.4"
+            ],
+            "details": "1. 在 `initializePeerConnection` 中，為 `peerConnection` 指派 `onicecandidate` 事件處理器。當 `event.candidate` 存在時，透過 WebSocket 將 `type: 'candidate'`, `payload: event.candidate` 的訊息發送給對方。\n2. 在 WebSocket 訊息處理邏輯中，當收到 `type: 'candidate'` 的訊息時，呼叫 `peerConnection.addIceCandidate(new RTCIceCandidate(candidate))` 將收到的候選地址加入連線中。\n3. 在 `useWebRTC` Hook 中，建立一個 `hangUp()` 函數。此函數應執行以下操作：\n   a. 關閉點對點連線：`peerConnection.close()`。\n   b. 停止本地媒體軌道：`localStream.getTracks().forEach(track => track.stop())`。\n   c. 透過 WebSocket 發送 `hangup` 訊息通知對方。\n   d. 重設 Hook 內部所有狀態，並將 `callState` 設為 'ended'。",
+            "status": "pending",
+            "testStrategy": "端對端測試：在兩個瀏覽器分頁中完成一次完整通話。驗證雙方是否能聽到聲音。在通話中，檢查 WebSocket 訊息，確認有 `candidate` 訊息在交換。點擊任一方的「掛斷」按鈕，驗證 `peerConnection` 的 `connectionState` 是否變為 `closed`，且雙方的音訊都已中斷。"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "前端語音錄製與上傳",
+        "description": "在通話過程中，使用瀏覽器原生的 `MediaRecorder` Web API 錄製音訊。通話結束後，將錄製好的音訊檔案以 WAV 格式上傳至後端伺服器。",
+        "details": "1. 在 WebRTC 連線成功後，從 `RTCPeerConnection` 的遠端音訊軌道 (`remoteStream`) 創建一個 `MediaRecorder` 實例。\n2. 使用一個陣列 (`audioChunks`) 在 `ondataavailable` 事件中收集音訊數據塊。\n3. 啟動錄製：`mediaRecorder.start()`。\n4. 通話結束時（點擊掛斷），呼叫 `mediaRecorder.stop()`。\n5. 在 `onstop` 事件中，將收集到的 `audioChunks` 合成一個 `Blob` 物件，指定其 MIME 類型為 `audio/wav`。\n6. 使用 `FormData` 和 `fetch` API，將此 `Blob` 物件以 `POST` 請求上傳至後端的 `/api/upload` 端點。\n7. 增加檔案上傳的 UI 反饋，例如顯示「錄音上傳中...」以及處理「上傳失敗，請稍後重試」的錯誤情況。",
+        "testStrategy": "整合測試：完成一次完整的通話流程後，檢查瀏覽器開發者工具的網路分頁，確認是否有一個 `POST` 請求成功發送到 `/api/upload`。在後端伺服器上，檢查檔案是否已儲存，資料庫紀錄是否已更新。",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "初始化 MediaRecorder 實例與狀態管理",
+            "description": "在 WebRTC 遠端媒體流成功接收後，初始化 `MediaRecorder`。建立必要的 React 狀態變數來管理錄音器實例和收集的音訊數據塊。",
+            "dependencies": [],
+            "details": "1. 在處理 WebRTC 連線的 React 元件中，使用 `useRef` 來儲存 `MediaRecorder` 實例和 `audioChunks` 陣列，以避免在重新渲染時重置。\n2. 當 `RTCPeerConnection` 的 `ontrack` 事件觸發並接收到遠端音訊軌道 (`remoteStream`) 時，創建一個新的 `MediaRecorder` 實例：`new MediaRecorder(remoteStream)`。\n3. 將創建的實例儲存到 `useRef` 中以供後續使用。",
+            "status": "pending",
+            "testStrategy": "單元測試：驗證在模擬的 `ontrack` 事件後，`MediaRecorder` 實例是否被成功創建並儲存。手動測試：在通話連線後，於瀏覽器主控台檢查相關的 ref 是否已包含 `MediaRecorder` 物件。"
+          },
+          {
+            "id": 2,
+            "title": "實作錄音生命週期控制邏輯",
+            "description": "實作啟動、停止錄音以及在錄音過程中收集音訊數據的邏輯。這將與通話的開始和結束事件綁定。",
+            "dependencies": [
+              "8.1"
+            ],
+            "details": "1. 在 `MediaRecorder` 實例上綁定 `ondataavailable` 事件監聽器。在此處理函式中，將事件提供的 `event.data` 推入 `audioChunks` 陣列中。\n2. 創建一個 `startRecording` 函式，該函式在通話成功建立後被呼叫，內部執行 `mediaRecorder.current.start()`。\n3. 創建一個 `stopRecording` 函式，該函式在使用者點擊掛斷按鈕時被呼叫，內部執行 `mediaRecorder.current.stop()`。",
+            "status": "pending",
+            "testStrategy": "手動測試：在通話過程中，於主控台手動呼叫 `startRecording` 和 `stopRecording`。檢查 `audioChunks` 陣列在停止後是否包含數據。"
+          },
+          {
+            "id": 3,
+            "title": "處理已錄製的音訊數據並生成 WAV 格式的 Blob",
+            "description": "在錄音停止後，將收集到的所有音訊數據塊合併成一個單一的 Blob 物件，並指定其 MIME 類型為 `audio/wav`，為上傳做準備。",
+            "dependencies": [
+              "8.2"
+            ],
+            "details": "1. 在 `MediaRecorder` 實例上綁定 `onstop` 事件監聽器。\n2. 在 `onstop` 處理函式中，使用 `new Blob(audioChunks.current, { type: 'audio/wav' })` 將收集到的數據塊陣列轉換為一個 Blob 物件。\n3. 清空 `audioChunks.current` 陣列，為下一次可能的錄音做準備。\n4. 將生成的 Blob 物件傳遞給下一步的上傳函式。",
+            "status": "pending",
+            "testStrategy": "手動測試：在 `onstop` 事件處理函式中加入 `console.log(blob)`，並在通話結束後檢查主控台輸出的 Blob 物件，確認其 `size` 大於 0 且 `type` 為 `audio/wav`。"
+          },
+          {
+            "id": 4,
+            "title": "建立音訊檔案上傳函式",
+            "description": "編寫一個獨立的非同步函式，負責將音訊 Blob 物件透過 `fetch` API 以 `POST` 請求上傳至後端 `/api/upload` 端點。",
+            "dependencies": [
+              "8.3"
+            ],
+            "details": "1. 創建一個名為 `uploadAudio` 的 `async` 函式，它接收音訊 Blob 和通話 ID 作為參數。\n2. 在函式內部，創建一個 `FormData` 物件。\n3. 使用 `formData.append('audioFile', audioBlob, 'recording.wav')` 將 Blob 加入表單數據中，並可選擇性地附加其他元數據，如通話 ID。\n4. 使用 `fetch('/api/upload', { method: 'POST', body: formData })` 發送請求。\n5. 函式應返回一個 Promise，解析伺服器的回應或在失敗時拒絕。",
+            "status": "pending",
+            "testStrategy": "整合測試：使用一個假的 Blob 物件手動呼叫此函式，並在瀏覽器開發者工具的網路分頁中，檢查是否已正確發出 `POST` 請求至 `/api/upload`，並確認其 payload 格式正確。"
+          },
+          {
+            "id": 5,
+            "title": "整合上傳流程與 UI 反饋及錯誤處理",
+            "description": "將上傳功能與 UI 完全整合，在錄音停止後自動觸發上傳，並向使用者顯示上傳狀態（如「上傳中...」、「上傳成功」或「上傳失敗」）。",
+            "dependencies": [
+              "8.4"
+            ],
+            "details": "1. 建立一個 React 狀態變數，例如 `const [uploadStatus, setUploadStatus] = useState('idle');` 來追蹤上傳狀態 ('idle', 'uploading', 'success', 'error')。\n2. 修改 `onstop` 事件處理函式，在生成 Blob 後，呼叫 `uploadAudio` 函式並更新狀態為 `setUploadStatus('uploading')`。\n3. 使用 `.then()` 和 `.catch()` 或 `async/await` 的 `try/catch` 塊來處理 `uploadAudio` 的結果。\n4. 成功時，更新狀態為 `setUploadStatus('success')`；失敗時，更新為 `setUploadStatus('error')`。\n5. 在 UI 中根據 `uploadStatus` 的值，條件性地渲染不同的提示訊息給使用者，例如使用一個小型的 Toast 通知或狀態文字。",
+            "status": "pending",
+            "testStrategy": "端到端測試：完成一次完整的通話流程，掛斷電話後，觀察 UI 是否正確顯示「錄音上傳中...」。之後，根據後端的回應（成功或模擬的失敗），驗證 UI 是否更新為對應的成功或失敗訊息。"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "通話紀錄與下載頁面",
+        "description": "建立一個新的頁面或路由，用於展示「VoIP 通話監控中心」的通話紀錄。此頁面將從後端 API 獲取歷史通話資料並以表格形式呈現，同時提供下載錄音檔案的連結。",
+        "details": "1. 在 React 應用中使用 `react-router-dom` 建立一個新路由，例如 `/history`。\n2. 建立一個 `CallHistory` 元件。\n3. 在該元件中，使用 `useEffect` Hook 在元件掛載時向後端的 `/api/history` 端點發送 `GET` 請求。\n4. 將獲取到的通話紀錄陣列儲存在 `useState` 中。\n5. 使用 `.map()` 方法將資料渲染成一個 HTML 表格，包含 PRD 中描述的各個欄位。\n6. 「下載」欄位應為一個 `<a>` 標籤，其 `href` 屬性指向 `/api/downloads/{filename}`。",
+        "testStrategy": "整合測試：在完成幾次通話和錄音上傳後，導覽至 `/history` 頁面。驗證頁面是否能正確顯示所有通話紀錄，並且點擊「下載」連結是否能成功下載對應的 WAV 檔案。",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "建立 `/history` 路由與 `CallHistory` 元件骨架",
+            "description": "設定 React Router 以新增 `/history` 路由，並建立一個基本的 `CallHistory` React 元件檔案。此元件初期僅需包含一個標題或佔位文字，以確認路由設定正確。",
+            "dependencies": [],
+            "details": "1. 在應用程式的主路由器設定檔（例如 `App.js` 或 `routes.js`）中，使用 `<Route path=\"/history\" element={<CallHistory />} />` 新增路由。\n2. 建立 `src/pages/CallHistory.js` 或 `src/components/CallHistory.js` 檔案。\n3. 在該檔案中，建立一個基本的函式元件，例如 `const CallHistory = () => (<div><h2>通話紀錄</h2></div>); export default CallHistory;`。",
+            "status": "pending",
+            "testStrategy": "啟動前端應用程式後，手動在瀏覽器中導覽至 `/history` 路徑，確認頁面能成功渲染並顯示「通話紀錄」標題。"
+          },
+          {
+            "id": 2,
+            "title": "實作 API 資料獲取與狀態管理",
+            "description": "在 `CallHistory` 元件中，使用 `useEffect` Hook 在元件首次渲染時，向後端 `/api/history` 端點發送 GET 請求。將獲取到的通話紀錄資料儲存在元件的 state 中。",
+            "dependencies": [
+              "9.1"
+            ],
+            "details": "1. 從 React 引入 `useState` 和 `useEffect`。\n2. 建立一個 state 來儲存通話紀錄：`const [history, setHistory] = useState([]);`。\n3. 在 `useEffect` Hook 中，使用 `fetch` 或 `axios` 函式向 `/api/history` 發送 GET 請求。\n4. 在請求成功的回呼 (callback) 中，使用 `setHistory(responseData)` 將從後端收到的資料陣列更新到 state 中。",
+            "status": "pending",
+            "testStrategy": "使用瀏覽器開發者工具的「網路(Network)」分頁，驗證 `CallHistory` 元件掛載時是否自動發送了對 `/api/history` 的 GET 請求。使用 React DevTools 檢查 `CallHistory` 元件的 `history` 狀態是否已成功填入從 API 返回的資料。"
+          },
+          {
+            "id": 3,
+            "title": "渲染通話紀錄表格",
+            "description": "根據從 API 獲取的通話紀錄資料，使用 `.map()` 方法將資料動態渲染成一個 HTML 表格。表格應包含所有必要的欄位，如呼叫方、接收方、通話時間、通話時長等。",
+            "dependencies": [
+              "9.2"
+            ],
+            "details": "1. 在 `CallHistory` 元件的 JSX 中，建立一個 `<table>` 結構，並使用 `<thead>` 定義表頭（例如：呼叫方、接收方、開始時間、通話時長、錄音下載）。\n2. 在 `<tbody>` 中，使用 `history.map((call) => ...)` 來遍歷儲存在 state 中的通話紀錄陣列。\n3. 為每筆通話紀錄產生一個 `<tr>` 元素，並在其中包含多個 `<td>` 來顯示 `call.caller_id`, `call.receiver_id`, `call.start_time` 等對應的資料欄位。",
+            "status": "pending",
+            "testStrategy": "在後端 API 準備好幾筆測試資料後，刷新 `/history` 頁面。目視檢查表格是否正確顯示所有資料，且資料欄位與表頭對應無誤。"
+          },
+          {
+            "id": 4,
+            "title": "新增錄音檔案下載功能",
+            "description": "在通話紀錄表格的每一行新增一個「下載」欄位。此欄位應包含一個超連結 (`<a>` 標籤)，其 `href` 屬性需動態指向後端的錄音下載端點。",
+            "dependencies": [
+              "9.3"
+            ],
+            "details": "1. 在 `history.map()` 迴圈中，為每一行 `<tr>` 新增一個 `<td>` 作為下載欄。\n2. 在此 `<td>` 中，建立一個 `<a>` 標籤。\n3. 將其 `href` 屬性動態設定為 `` `/api/downloads/${call.audio_filename}` ``（或後端提供的錄音檔名欄位）。\n4. 為了更好的使用者體驗，可以加上 `download` 屬性，讓瀏覽器直接下載檔案而不是在新分頁中開啟。",
+            "status": "pending",
+            "testStrategy": "在頁面上，點擊表格中任一行的「下載」連結。驗證瀏覽器是否能觸發檔案下載，且下載的檔案是否為對應通話的錄音檔（例如 WAV 檔）。"
+          },
+          {
+            "id": 5,
+            "title": "增加載入中與錯誤狀態處理",
+            "description": "為了提升使用者體驗，在 API 請求正在進行時，應顯示「載入中...」的提示；若請求失敗，則應顯示相關的錯誤訊息。",
+            "dependencies": [
+              "9.2"
+            ],
+            "details": "1. 在 `CallHistory` 元件中，新增兩個 state：`const [isLoading, setIsLoading] = useState(true);` 和 `const [error, setError] = useState(null);`。\n2. 在 `useEffect` 中，於發送 API 請求前呼叫 `setIsLoading(true)`。\n3. 在請求的 `finally` 區塊或成功與失敗的回呼中，呼叫 `setIsLoading(false)`。\n4. 在請求的 `catch` 區塊中，使用 `setError(errorObject)` 來儲存錯誤資訊。\n5. 在 JSX 中，使用條件渲染：若 `isLoading` 為 true，則顯示載入提示；若 `error` 不為 null，則顯示錯誤訊息；否則顯示通話紀錄表格。",
+            "status": "pending",
+            "testStrategy": "1. (載入中) 使用瀏覽器開發者工具的網路節流功能模擬慢速網路，驗證「載入中」提示是否在資料載入完成前顯示。\n2. (錯誤) 暫時修改 API 端點 URL 為一個不存在的路徑，刷新頁面，驗證頁面是否能正確顯示錯誤訊息，而不是崩潰或空白。"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "伺服器監控中心 UI",
+        "description": "在「VoIP 通話監控中心」頁面中，增加一個即時顯示線上人員的區塊。此區塊將透過 WebSocket 連線，即時接收並展示目前所有已連線的使用者資訊。",
+        "details": "1. 在「通話監控中心」頁面 (`CallHistory` 元件或其父元件) 中，建立一個新的 WebSocket 連線，專用於監控。\n2. 與任務 6 類似，監聽來自 WebSocket 伺服器的使用者列表廣播訊息。\n3. 建立一個 `OnlineUsers` 子元件，用於接收使用者列表資料並將其渲染成一個列表或表格，顯示使用者名稱、IP 位址和上線時間。\n4. 確保此頁面的 WebSocket 連線不會干擾主應用程式的通話功能。",
+        "testStrategy": "手動驗證：打開主應用程式和監控中心頁面。在主應用程式中登入或登出使用者，觀察監控中心的「上線人員名單」是否能夠即時、正確地反映這些變化。",
+        "priority": "low",
+        "dependencies": [
+          2,
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "建立 `OnlineUsers` 元件並整合至監控頁面",
+            "description": "建立一個新的 React 元件 `OnlineUsers.tsx`，用於顯示線上使用者列表。並將此元件嵌入到「通話監控中心」頁面 (例如 `CallHistory` 元件) 的適當位置，先以靜態假資料完成基本 UI 佈局。",
+            "dependencies": [],
+            "details": "1. 在 `src/components` 目錄下建立 `OnlineUsers.tsx` 檔案。\n2. 元件應包含一個表格 (`<table>`) 或列表 (`<ul>`) 結構，欄位應有「使用者名稱」、「IP 位址」和「上線時間」。\n3. 使用 Tailwind CSS 設定基本樣式，使其清晰易讀。\n4. 在 `CallHistory.tsx` 或其父元件中引入 `OnlineUsers` 元件，並在頁面佈局中渲染它。\n5. 初期可使用一組寫死的假資料 (mock data) 來驗證 UI 顯示是否正常。",
+            "status": "pending",
+            "testStrategy": "手動驗證：導航至「通話監控中心」頁面，確認 `OnlineUsers` 區塊已顯示，且靜態假資料的表格/列表佈局正確。"
+          },
+          {
+            "id": 2,
+            "title": "在監控頁面建立專用的 WebSocket 連線",
+            "description": "在 `CallHistory` 元件或其父層容器元件中，使用 `useEffect` Hook 來建立一個新的、專用於監控的 WebSocket 連線。此連線應在元件掛載時建立，並在卸載時關閉。",
+            "dependencies": [
+              "10.1"
+            ],
+            "details": "1. 在 `CallHistory` 元件中，使用 `useEffect` Hook 來管理 WebSocket 的生命週期。\n2. 建立一個 `WebSocket` 實例，連線至後端專為監控設計的 WebSocket 端點 (例如 `ws://localhost:8080/ws/monitor`)。\n3. 將 WebSocket 實例儲存在 `useRef` 中，以避免在每次重新渲染時重複建立連線。\n4. 在 `useEffect` 的清理函式中，呼叫 `ws.current.close()` 來確保元件卸載時能優雅地關閉連線，防止記憶體洩漏。",
+            "status": "pending",
+            "testStrategy": "使用瀏覽器開發者工具的「網路」(Network) 分頁，篩選 WS (WebSocket) 請求。確認當進入監控頁面時，一個新的 WebSocket 連線請求已成功建立 (狀態碼 101 Switching Protocols)，並在離開頁面時連線被關閉。"
+          },
+          {
+            "id": 3,
+            "title": "實作 WebSocket 訊息接收與解析邏輯",
+            "description": "為監控頁面的 WebSocket 連線實作 `onmessage` 事件處理器。此處理器將負責接收從伺服器廣播的線上使用者列表訊息，並將其從 JSON 字串格式解析為 JavaScript 物件陣列。",
+            "dependencies": [
+              "10.2"
+            ],
+            "details": "1. 在建立 WebSocket 連線的 `useEffect` 中，為 WebSocket 實例指派 `onmessage` 事件處理函式。\n2. 在 `onmessage` 函式內部，使用 `JSON.parse(event.data)` 來解析收到的訊息。\n3. 需要與後端（任務 2）約定好訊息的資料結構，例如 `{ \"type\": \"user_list\", \"payload\": [{\"username\": \"user1\", \"ip\": \"192.168.1.10\", \"online_at\": \"...\"}] }`。\n4. 初步先將解析後的資料印在主控台 (`console.log`) 以驗證資料接收與解析是否正確。",
+            "status": "pending",
+            "testStrategy": "在 `onmessage` 處理器中加入 `console.log`。手動啟動後端伺服器和多個客戶端，驗證當使用者上線或下線時，監控頁面的主控台能否正確接收並印出解析後的最新使用者列表資料。"
+          },
+          {
+            "id": 4,
+            "title": "將使用者列表資料與 `OnlineUsers` 元件狀態綁定",
+            "description": "使用 `useState` 建立一個狀態變數來儲存線上使用者列表。在 WebSocket 的 `onmessage` 處理器中，當接收到新的使用者列表時，更新此狀態，從而觸發 `OnlineUsers` 元件的重新渲染以顯示最新資料。",
+            "dependencies": [
+              "10.1",
+              "10.3"
+            ],
+            "details": "1. 在 `CallHistory` 元件中定義狀態：`const [onlineUsers, setOnlineUsers] = useState([]);`。\n2. 修改 `onmessage` 處理器，在成功解析資料後，呼叫 `setOnlineUsers(parsedData.payload)` 來更新狀態。\n3. 將 `onlineUsers` 狀態作為 prop 傳遞給 `<OnlineUsers users={onlineUsers} />`。\n4. 修改 `OnlineUsers` 元件，使其接收 `users` prop 並使用 `.map()` 方法動態渲染列表，取代原有的靜態假資料。",
+            "status": "pending",
+            "testStrategy": "整合測試：同時開啟後端伺服器、多個主應用程式分頁（模擬不同使用者登入）以及監控中心頁面。驗證 `OnlineUsers` 列表是否能即時、正確地顯示所有已登入的使用者資訊。當有使用者登出時，列表也應即時移除該使用者。"
+          },
+          {
+            "id": 5,
+            "title": "處理連線狀態與錯誤，並確保功能隔離",
+            "description": "增加 UI 提示來顯示 WebSocket 的連線狀態（例如「連線中...」、「已連線」、「已斷線」），並處理潛在的連線錯誤。同時，驗證此監控頁面的 WebSocket 連線不會與主應用程式的 WebRTC 信令 WebSocket 產生衝突。",
+            "dependencies": [
+              "10.2",
+              "10.4"
+            ],
+            "details": "1. 建立一個 `useState` 來追蹤連線狀態，例如 `const [connectionStatus, setConnectionStatus] = useState('connecting');`。\n2. 在 WebSocket 的 `onopen`, `onclose`, `onerror` 事件處理器中分別更新此狀態為 `'connected'`, `'disconnected'`, `'error'`。\n3. 在 UI 上根據 `connectionStatus` 顯示對應的文字或圖示提示。\n4. 進行程式碼審查，確認主應用程式的通話 WebSocket 和監控頁面的 WebSocket 是兩個獨立的實例，其狀態管理和事件處理邏輯互不干擾。",
+            "status": "pending",
+            "testStrategy": "手動測試：1. 重新整理監控頁面，觀察是否短暫顯示「連線中...」。2. 手動停止後端伺服器，驗證前端是否顯示「已斷線」或錯誤提示。3. 同時開啟主應用程式和監控頁面，在主應用程式中進行一次 WebRTC 通話，確認監控頁面的使用者列表功能不受影響，反之亦然。"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-08-10T06:11:03.747Z",
+      "updated": "2025-08-10T06:11:03.748Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
